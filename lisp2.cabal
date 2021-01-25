@@ -1,0 +1,15 @@
+cabal-version:      >= 2.0
+name:               lisp2
+version:            0.1.0.0
+build-type:         Simple
+
+executable lisp2
+  main-is:          Main.hs
+  other-modules:    Common, Parse, Eval
+  build-depends:    base ^>= 4.13,
+                    text ^>= 1.2.4,
+                    containers ^>= 0.6.4,
+                    mtl ^>= 2.2.2,
+                    megaparsec ^>= 9.0.1
+  hs-source-dirs:   src
+  default-language: Haskell2010
