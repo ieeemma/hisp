@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase, PatternSynonyms, ViewPatterns #-}
 module Eval where
 
 import Common
@@ -15,16 +14,12 @@ withEnv f x = do
     put st
     pure x'
 
-pairedList :: Value -> Maybe [Value]
-pairedList = \ case
-  x `Pair` xs -> fmap (x :) (pairedList xs)
-  Null        -> Just []
-  _           -> Nothing
-pattern List xs <- (pairedList -> Just xs)
+pairedMapM :: (Value -> Lisp Value) -> Value -> Lisp Value
+pairedMapM f (List xs) = flip toPaired Null <$> f `traverse` xs
 
 match :: Value -> Value -> Lisp Scope
 match (x `Pair` xs) (y `Pair` ys) = M.union <$> match x y <*> match xs ys
-match (Symbol n) y = M.singleton n <$> eval y
+match (Symbol n) y = pure $ M.singleton n y
 match Null Null = pure M.empty
 match Null _ = lispError ArgumentError "too many arguments to function call"
 match _ Null = lispError ArgumentError "too few arguments to function call"
@@ -55,7 +50,7 @@ eval' (x `Pair` y) = do
     fn <- eval x
     case fn of
         Lambda a b c -> do
-            new <- match a y
+            new <- pairedMapM eval y >>= match a
             withEnv (M.union new) $ eval b
         Procedure _ f ->
             fromPaired y >>= (eval `traverse`) >>= f

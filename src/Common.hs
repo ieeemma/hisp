@@ -1,9 +1,10 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms, ViewPatterns #-}
 module Common where
 
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Map (Map)
+import qualified Data.Map as M
 import Control.Monad.State (StateT, runStateT, gets)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 
@@ -30,6 +31,14 @@ instance Show Value where
     show (Procedure n _) = "<procedure " <> T.unpack n <> ">"
     show (Null) = "'()"
 
+pairedList :: Value -> Maybe [Value]
+pairedList = \ case
+  x `Pair` xs -> fmap (x :) (pairedList xs)
+  Null        -> Just []
+  _           -> Nothing
+pattern List xs <- (pairedList -> Just xs)
+
+data Macro = Macro Symbol Value Value
 
 showValList (x `Pair` Null) = show x
 showValList (x `Pair` y) = show x <> " " <> showValList y

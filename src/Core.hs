@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
 module Core where
 
 import Common
