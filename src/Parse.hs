@@ -32,8 +32,10 @@ list = lexeme $ parens $ do
 
 quote :: Parser Value
 quote = do
-    x <- symbol "'" *> sexpression
-    pure $ toPaired [Symbol "quote", x] Null
+
+    symbol "'"
+    try (symbol "(" *> symbol ")" *> pure Null)
+      <|> (\x -> toPaired [Symbol "quote", x] Null) <$> sexpression
 
 unquote :: Parser Value
 unquote = do

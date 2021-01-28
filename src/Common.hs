@@ -46,9 +46,10 @@ showValList x = " . " <> show x
 
 type Scope = Map Symbol Value
 
-data LispSt = LispSt { env :: [Scope], backtrace :: [Value] } deriving (Show)
+data LispSt
+    = LispSt { env :: [Scope], macros :: Map Symbol Macro, backtrace :: [Value] }
 data LispError
-    = FormError | ArgumentError | TypeError | ValueError | NameError
+    = ParseError | FormError | ArgumentError | TypeError | ValueError | NameError
     deriving (Show)
 
 type Lisp = StateT LispSt (ExceptT ([Value], LispError, Text) IO)
@@ -67,4 +68,4 @@ toPaired [] e = e
 toPaired (x:xs) e = x `Pair` toPaired xs e
 
 runEval :: Lisp a -> Scope -> IO (Either ([Value], LispError, Text) (a, LispSt))
-runEval x e = runExceptT $ runStateT x (LispSt [e] [])
+runEval x e = runExceptT $ runStateT x (LispSt [e] M.empty [])

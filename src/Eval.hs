@@ -16,6 +16,7 @@ withEnv f x = do
 
 pairedMapM :: (Value -> Lisp Value) -> Value -> Lisp Value
 pairedMapM f (List xs) = flip toPaired Null <$> f `traverse` xs
+pairedMapM f x = pure x
 
 match :: Value -> Value -> Lisp Scope
 match (x `Pair` xs) (y `Pair` ys) = M.union <$> match x y <*> match xs ys
@@ -28,11 +29,12 @@ match _ _    = lispError ArgumentError "wrong arguments to function call"
 truthy (BoolVal False) = False
 truthy _ = True
 
-forms = ["define", "lambda", "do", "if"]
+forms = ["quote", "define", "lambda", "do", "if"]
 
 eval' :: Value -> Lisp Value
 eval' e@(Symbol x `Pair` _) | x `elem` forms =
     case e of
+        List [Symbol "quote", x] -> pure x
         List [Symbol "define", Symbol name, value] -> do
             value' <- eval value
             ([x], xs) <- splitAt 1 <$> gets env

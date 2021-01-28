@@ -11,7 +11,7 @@ import Control.Monad.IO.Class (liftIO)
 
 builtin :: Text -> (Int -> Bool) -> ([Value] -> Lisp Value) -> (Text, Value)
 builtin n p f = (n, Procedure n check)
-    where check xs = if p (length xs) then eval `traverse` xs >>= f
+    where check xs = if p (length xs) then f xs
                      else lispError ArgumentError $ "incorrect # args to " <> n
 
 unpackNumber (NumVal x) = pure x
@@ -70,6 +70,8 @@ builtins = M.fromList
     , typePred "procedure?" $ \case { Lambda{} -> t; Procedure{} -> t; _ -> f }
     , typePred "null?" $ \case { Null -> t; _ -> f }
 
-    , builtin "print" (== 1) $ \[x] -> liftIO (print x) *> pure Null ]
+    , builtin "print" (== 1) $ \[x] -> liftIO (print x) *> pure Null
+
+    , builtin "cons" (== 2) $ \[x, y] -> pure $ x `Pair` y ]
     where t = True
           f = False
