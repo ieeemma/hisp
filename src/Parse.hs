@@ -53,13 +53,23 @@ symbolStart, symbolMid :: Parser Char
 symbolStart = satisfy $ symbolPred ['(',')','[',']', '.','\'',',']
 symbolMid   = satisfy $ symbolPred ['(',')','[',']']
 
-symbol' = lexeme $ Symbol . T.pack <$> ((:) <$> symbolStart <*> many symbolMid)
+stringLit = lexeme $
+    StringVal <$> T.pack <$> (symbol "\"" *> manyTill L.charLiteral (symbol "\""))
+
+symbol' = lexeme $ do
+    s <- sym
+    case s of
+        "#t" -> pure $ BoolVal True
+        "#f" -> pure $ BoolVal False
+        _    -> pure $ Symbol $ T.pack s
+    where sym = ((:) <$> symbolStart <*> many symbolMid)
 
 sexpression :: Parser Value
 sexpression
     =  list
    <|> quote <|> unquote
    <|> try signedInt
+   <|> try stringLit
    <|> symbol'
 
-file = many sexpression
+file = sc *> many sexpression <* eof

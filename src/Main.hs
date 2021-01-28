@@ -1,20 +1,20 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase #-}
 module Main where
 
 import Common
 import Parse
 import Eval
+import Core
+
+import qualified Data.Text.IO as TIO
 
 import Text.Megaparsec (parse, errorBundlePretty)
 
-fn = Symbol "lambda" `Pair` (Symbol "x" `Pair` Null) `Pair` Symbol "x" `Pair` Null
-arg = NumVal 5
-
-test = "((lambda (x) x) 5)"
-
 main :: IO ()
-main = case parse file "" test of
-    Right xs -> runEval (eval `traverse` xs) mempty >>= print
-    Left e -> putStrLn $ errorBundlePretty e
-
-
+main = do
+    f <- TIO.readFile "test.scm"
+    case parse file "" f of
+        Right xs -> runEval (eval `traverse` xs) builtins >>= \case
+            Right (x, _) -> print x
+            Left e -> print e
+        Left e -> putStrLn $ errorBundlePretty e
