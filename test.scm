@@ -1,18 +1,18 @@
 
-(define fac
-  (lambda (n)
-    (if (= n 0)
-        1
-        (* n (fac (- n 1))))))
+(define-struct vec-2d x y)
 
-(define-macro test (x y) x)
+(define v (make-vec-2d 5 10))
 
-(test (print 5) (print 10))
+(print (vec-2d-x v))
+(vec-2d-x-set! v 100)
+(print (vec-2d-x v))
 
-(define car
-  (lambda ((x . xs)) x))
-(define cdr
-  (lambda ((x . xs)) xs))
+(define-macro (test x y)
+  (print "hi"))
 
-(print (car '(3 4 5)))
+(define x 5)
+(print x)
+
+(define (foo x) (* 2 x))
+(print (foo 5))
 

@@ -5,6 +5,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.List (intercalate)
+import Data.IORef
 import Control.Monad.State (StateT, runStateT, gets)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 
@@ -17,7 +19,8 @@ data Value
     | NumVal Double
     | StringVal Text
     | Lambda Value Value [Scope]
-    | Procedure Text ([Value] -> Lisp Value)
+    | Procedure Symbol ([Value] -> Lisp Value)
+    | Struct Symbol [(Symbol, IORef Value)]
     | Null
 infixr `Pair`
 
@@ -29,6 +32,7 @@ instance Show Value where
     show (StringVal x) = show x
     show (Lambda a b c) = "<lambda " <> show a <> ">"
     show (Procedure n _) = "<procedure " <> T.unpack n <> ">"
+    show (Struct n xs) = "<struct " <> T.unpack n <> ">"
     show (Null) = "'()"
 
 pairedList :: Value -> Maybe [Value]
@@ -66,6 +70,11 @@ fromPaired _ = lispError FormError "Bad list form"
 toPaired :: [Value] -> Value -> Value
 toPaired [] e = e
 toPaired (x:xs) e = x `Pair` toPaired xs e
+
+makeProc :: Text -> (Int -> Bool) -> ([Value] -> Lisp Value) -> Value
+makeProc n p f = Procedure n $
+    \xs -> if p (length xs) then f xs
+           else lispError ArgumentError $ "incorrect # args to " <> n
 
 runEval :: Lisp a -> Scope -> IO (Either ([Value], LispError, Text) (a, LispSt))
 runEval x e = runExceptT $ runStateT x (LispSt [e] M.empty [])

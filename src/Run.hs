@@ -19,7 +19,7 @@ import Control.Monad.State (modify)
 getMacros :: [Value] -> Lisp (Map Symbol Macro, [Value])
 getMacros tls = first M.unions . partitionEithers <$> extract `traverse` tls
     where extract (List (Symbol "define-macro" : xs)) = case xs of
-              [Symbol name, args, body] ->
+              [Symbol name `Pair` args, body] ->
                   pure $ Left $ M.singleton name $ Macro name args body
               _ -> lispError FormError "Malformed macro definition"
           extract x = pure $ Right x

@@ -9,10 +9,7 @@ import qualified Data.Text as T
 import qualified Data.Map as M
 import Control.Monad.IO.Class (liftIO)
 
-builtin :: Text -> (Int -> Bool) -> ([Value] -> Lisp Value) -> (Text, Value)
-builtin n p f = (n, Procedure n check)
-    where check xs = if p (length xs) then f xs
-                     else lispError ArgumentError $ "incorrect # args to " <> n
+builtin n p f = (n, makeProc n p f)
 
 unpackNumber (NumVal x) = pure x
 unpackNumber _ = lispError TypeError "Expected number argument"
