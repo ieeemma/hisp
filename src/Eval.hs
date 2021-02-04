@@ -1,10 +1,8 @@
 module Eval where
 
 import Common
-import Struct
 
 import qualified Data.Map as M
-import Data.Traversable (for)
 import Control.Applicative ((<|>))
 import Control.Monad.State (get, gets, put, modify)
 
@@ -24,9 +22,9 @@ match :: Value -> Value -> Lisp Scope
 match (x `Pair` xs) (y `Pair` ys) = M.union <$> match x y <*> match xs ys
 match (Symbol n) y = pure $ M.singleton n y
 match Null Null = pure M.empty
-match Null _ = lispError ArgumentError "too many arguments to function call"
-match _ Null = lispError ArgumentError "too few arguments to function call"
-match _ _    = lispError ArgumentError "wrong arguments to function call"
+match Null _ = lispError ArgumentError "too many arguments to call"
+match _ Null = lispError ArgumentError "too few arguments to call"
+match _ _    = lispError ArgumentError "wrong arguments to call"
 
 truthy (BoolVal False) = False
 truthy _ = True
@@ -36,7 +34,7 @@ define n x = do
     ([e], es) <- splitAt 1 <$> gets env
     modify $ \st -> st { env = M.insert n x e : es }
 
-forms = ["quote", "define", "define-struct", "lambda", "do", "if"]
+forms = ["quote", "define", "lambda", "do", "if"]
 
 eval' :: Value -> Lisp Value
 eval' e@(Symbol x `Pair` _) | x `elem` forms =
@@ -48,27 +46,6 @@ eval' e@(Symbol x `Pair` _) | x `elem` forms =
             *> pure Null
         List [Symbol "define", Symbol name, value] ->
             (eval value >>= define name) *> pure Null
-        List (Symbol "define-struct" : Symbol name : fields) -> do
-            let extract = \case
-                    Symbol x -> pure x
-                    _ -> lispError FormError "define-struct expected symbol field name"
-            fields' <- extract `traverse` fields
-            let makeN = "make-" <> name
-                makeF = makeProc makeN (== (length fields)) $ makeStruct name fields'
-            define makeN makeF
-            for fields' $ \f -> do
-                let getN = name <> "-" <> f
-                    getF = makeProc getN (== 1) $ \[st] -> case st of
-                        Struct n xs | n == name -> getField n xs f
-                        _ -> lispError TypeError (getN <> " expected " <> name <> " argument")
-                    setN = name <> "-" <> f <> "-set!"
-                    setF = makeProc getN (== 2) $ \[st, x] -> case st of
-                        Struct n xs | n == name -> setField n xs f x
-                                                *> pure Null
-                        _ -> lispError TypeError (setN <> " expected " <> name <> " argument")
-                define getN getF
-                define setN setF
-            pure Null
         List [Symbol "lambda", args, body] ->
             Lambda args body <$> gets env
         List (Symbol "do" : xs) ->

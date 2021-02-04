@@ -51,7 +51,12 @@ showValList x = " . " <> show x
 type Scope = Map Symbol Value
 
 data LispSt
-    = LispSt { env :: [Scope], macros :: Map Symbol Macro, backtrace :: [Value] }
+    = LispSt { env :: [Scope]
+             , backtrace :: [Value]
+             , preproc :: LispPreproc }
+data LispPreproc
+    = LispPreproc { macros :: Map Symbol Macro
+                  , visited :: [FilePath] }
 data LispError
     = ParseError | FormError | ArgumentError | TypeError | ValueError | NameError
     deriving (Show)
@@ -77,4 +82,4 @@ makeProc n p f = Procedure n $
            else lispError ArgumentError $ "incorrect # args to " <> n
 
 runEval :: Lisp a -> Scope -> IO (Either ([Value], LispError, Text) (a, LispSt))
-runEval x e = runExceptT $ runStateT x (LispSt [e] M.empty [])
+runEval x e = runExceptT $ runStateT x (LispSt [e] [] $ LispPreproc M.empty [])

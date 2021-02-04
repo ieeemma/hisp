@@ -30,17 +30,15 @@ list = lexeme $ parens $ do
     end <- (symbol "." *> sexpression) <|> pure Null
     pure $ toPaired xs end
 
+prefixed x name = do
+    symbol x
+    val <- sexpression
+    pure $ toPaired [Symbol name, val] Null
+
 quote :: Parser Value
-quote = do
-
-    symbol "'"
-    try (symbol "(" *> symbol ")" *> pure Null)
-      <|> (\x -> toPaired [Symbol "quote", x] Null) <$> sexpression
-
-unquote :: Parser Value
-unquote = do
-    x <- symbol "," *> sexpression
-    pure $ toPaired [Symbol "quote", x] Null
+quote = try null <|> prefixed "'" "quote" <|> prefixed "`" "quasiquote"
+    where null = (symbol "'" <|> symbol "`") *> symbol "(" *> symbol ")"
+                 *> pure Null
 
 signedInt = lexeme $
     NumVal <$> L.signed empty L.decimal <* notFollowedBy symbolStart
@@ -68,7 +66,9 @@ symbol' = lexeme $ do
 sexpression :: Parser Value
 sexpression
     =  list
-   <|> quote <|> unquote
+   <|> quote
+   <|> prefixed "," "unquote"
+-- <|> prefixed "#" "anon"
    <|> try signedInt
    <|> try stringLit
    <|> symbol'
