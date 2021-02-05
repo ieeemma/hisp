@@ -5,18 +5,29 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.List (intercalate)
+import Data.Ratio (numerator, denominator)
 import Data.IORef
 import Control.Monad.State (StateT, runStateT, gets)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 
 type Symbol = Text
 
+data LispNum
+    = LispInt Integer
+    | LispRational Rational
+    | LispReal Double
+    deriving (Show)
+
+getNum :: (Fractional a) => LispNum -> a
+getNum (LispInt x) = fromInteger x
+getNum (LispRational x) = fromRational x
+getNum (LispReal x) = realToFrac x
+
 data Value
     = Pair Value Value
     | Symbol Symbol
     | BoolVal Bool
-    | NumVal Double
+    | NumVal LispNum
     | StringVal Text
     | Lambda Value Value [Scope]
     | Procedure Symbol ([Value] -> Lisp Value)
@@ -28,7 +39,10 @@ instance Show Value where
     show e@(x `Pair` y) = "(" <> showValList e <> ")"
     show (Symbol n) = T.unpack n
     show (BoolVal x) = if x then "#t" else "#f"
-    show (NumVal x) = show x
+    show (NumVal x) = case x of
+        LispInt x -> show x
+        LispRational x -> show (numerator x) <> "/" <> show (denominator x)
+        LispReal x -> show x
     show (StringVal x) = show x
     show (Lambda a b c) = "<lambda " <> show a <> ">"
     show (Procedure n _) = "<procedure " <> T.unpack n <> ">"
@@ -37,9 +51,9 @@ instance Show Value where
 
 pairedList :: Value -> Maybe [Value]
 pairedList = \ case
-  x `Pair` xs -> fmap (x :) (pairedList xs)
-  Null        -> Just []
-  _           -> Nothing
+    x `Pair` xs -> fmap (x :) (pairedList xs)
+    Null        -> Just []
+    _           -> Nothing
 pattern List xs <- (pairedList -> Just xs)
 
 data Macro = Macro Symbol Value Value

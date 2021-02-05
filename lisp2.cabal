@@ -5,7 +5,7 @@ build-type:         Simple
 
 executable lisp2
   main-is:              Main.hs
-  other-modules:        Common, Parse, Eval, Core, Run, Struct
+  other-modules:        Common, Parse, Eval, Core, Number, Run, Struct
   build-depends:        base ^>= 4.13,
                         text ^>= 1.2.4,
                         containers ^>= 0.6.4,

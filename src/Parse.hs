@@ -5,7 +5,7 @@ import Common
 import Data.Char (isSpace)
 import Text.Megaparsec
 import qualified Text.Megaparsec.Char.Lexer as L
-import Text.Megaparsec.Char (space1)
+import Text.Megaparsec.Char (space, space1)
 import Data.Void (Void)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -40,10 +40,11 @@ quote = try null <|> prefixed "'" "quote" <|> prefixed "`" "quasiquote"
     where null = (symbol "'" <|> symbol "`") *> symbol "(" *> symbol ")"
                  *> pure Null
 
+signedInt, signedFloat :: Parser Value
 signedInt = lexeme $
-    NumVal <$> L.signed empty L.decimal <* notFollowedBy symbolStart
+    NumVal . LispInt <$> L.signed space L.decimal <* notFollowedBy symbolStart
 signedFloat = lexeme $
-    NumVal <$> L.signed empty L.float <* notFollowedBy symbolStart
+    NumVal . LispReal <$> L.signed space L.float <* notFollowedBy symbolStart
 
 symbolPred :: [Char] -> Char -> Bool
 symbolPred xs = \c -> (not $ isSpace c) && c `notElem` xs
