@@ -11,17 +11,19 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Maybe (isNothing, fromJust)
 import Data.Foldable (traverse_)
-import Text.Megaparsec (parse, errorBundlePretty)
+import Text.Megaparsec (parse)
 import Control.Applicative ((<|>))
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (gets, modify)
+import Control.Monad.Except (throwError)
 
 parseFile :: FilePath -> Lisp [Value]
 parseFile f = do
     contents <- liftIO $ TIO.readFile f
     case parse file f contents of
         Right xs -> pure xs
-        Left e -> lispError ParseError $ T.pack $ errorBundlePretty e
+        Left e -> -- throwError $ ParseError e
+                  undefined
 
 expand :: Value -> Lisp (Maybe Value)
 expand (Symbol x `Pair` xs) = do

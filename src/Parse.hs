@@ -24,6 +24,13 @@ lexeme = (<* sc)
 parens x =  (symbol "(" *> x <* symbol ")")
         <|> (symbol "[" *> x <* symbol "]")
 
+{-locate :: Parser Value -> Parser Value
+locate p = do
+    start <- getSourcePos
+    x <- p
+    end <- getSourcePos
+    pure $ Located x start end-}
+
 list :: Parser Value
 list = lexeme $ parens $ do
     xs  <- some sexpression
