@@ -24,13 +24,6 @@ lexeme = (<* sc)
 parens x =  (symbol "(" *> x <* symbol ")")
         <|> (symbol "[" *> x <* symbol "]")
 
-{-locate :: Parser Value -> Parser Value
-locate p = do
-    start <- getSourcePos
-    x <- p
-    end <- getSourcePos
-    pure $ Located x start end-}
-
 list :: Parser Value
 list = lexeme $ parens $ do
     xs  <- some sexpression
@@ -49,9 +42,9 @@ quote = try null <|> prefixed "'" "quote" <|> prefixed "`" "quasiquote"
 
 signedInt, signedFloat :: Parser Value
 signedInt = lexeme $
-    NumVal . LispInt <$> L.signed space L.decimal <* notFollowedBy symbolStart
+    NumVal . LispInt <$> L.signed (pure ()) L.decimal <* notFollowedBy symbolStart
 signedFloat = lexeme $
-    NumVal . LispReal <$> L.signed space L.float <* notFollowedBy symbolStart
+    NumVal . LispReal <$> L.signed (pure ()) L.float <* notFollowedBy symbolStart
 
 symbolPred :: [Char] -> Char -> Bool
 symbolPred xs = \c -> (not $ isSpace c) && c `notElem` xs

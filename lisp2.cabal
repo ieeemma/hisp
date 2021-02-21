@@ -7,6 +7,7 @@ executable lisp2
   main-is:              Main.hs
   other-modules:        Common, Parse, Eval, Core, Error, Run, Number, Struct
   build-depends:        base ^>= 4.13,
+                        readline ^>= 1.0.3,
                         text ^>= 1.2.4,
                         containers ^>= 0.6.4,
                         mtl ^>= 2.2.2,

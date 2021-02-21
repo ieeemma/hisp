@@ -6,23 +6,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Megaparsec (errorBundlePretty)
 
-{-
-instance Show ErrorType where
-    show = \case
-        FormError -> "FormError"
-        ArgumentError -> "ArgumentError"
-        TypeError -> "TypeError"
-        ValueError -> "ValueError"
-        NameError -> "NameError"
-
-
-prettyBacktrace :: [LValue] -> Text
-prettyBacktrace [] = ""
-prettyBacktrace (b
-
-errorPretty :: LispError -> Text
-errorPretty (ParseError e) = T.pack $ errorBundlePretty e
-errorPretty (ExecError t e bt) =
-    prettyBacktrace bt <> "\n" <> T.pack (show t) <> ": " <> e
--}
-
+-- Display an error message as a string so it can be printed to the
+-- screen. TODO: use backtrace.
+errorPretty :: [Value] -> LispError -> Text -> Text
+errorPretty _ ParseError t = t
+errorPretty _ e t = T.pack (show e) <> ": " <> t
