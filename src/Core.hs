@@ -54,7 +54,7 @@ numberToString _ = expected "number->string" "number"
 -- Print or input a value as text
 lispPrint [x] = pure Null <* case x of
     StringVal x -> liftIO $ TIO.putStr x
-    x -> showValue x >>= liftIO . TIO.putStr
+    x -> liftIO $ TIO.putStr (showValue x)
 lispRead _ = StringVal <$> (liftIO $ TIO.getLine)
 
 
@@ -74,8 +74,8 @@ lispEq [x, y] = pure $ BoolVal $ x =.= y
           BoolVal x =.= BoolVal y = x == y
           NumVal x =.= NumVal y = x == y
           StringVal x =.= StringVal y = x == y
-          Lambda a1 b1 _ =.= Lambda a2 b2 _ =
-              (a1 =.= b1) && (b1 =.= b2)
+          Lambda n1 a1 b1 _ =.= Lambda n2 a2 b2 _ =
+              (n1 == n2) && (a1 =.= b1) && (b1 =.= b2)
           Procedure n1 _ =.= Procedure n2 _ =
               n1 == n2
         
@@ -131,7 +131,7 @@ builtins = M.fromList
 
     , builtin "cons" (== 2) $ \[x, y] -> pure $ x `Pair` y
     , builtin "eval" (== 1) $ \[x] -> eval x
-    , builtin "show" (== 1) $ \[x] -> StringVal <$> showValue x
+    , builtin "show" (== 1) $ \[x] -> pure $ StringVal $ showValue x
     , builtin "eq?" (== 2) $ lispEq
     ]
     where t = True

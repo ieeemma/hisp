@@ -4,10 +4,31 @@ import Common
 
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Bifunctor (bimap)
 import Text.Megaparsec (errorBundlePretty)
+
+showBacktrace :: [(Location, [Value])] -> Text
+showBacktrace bt = T.intercalate "\n" $ f <$> reverse bt
+    where f (l, xs) =
+              let xs' = (T.intercalate "\n" . fmap ("   " <>) . T.lines . showValue) <$> reverse xs
+              in title l <> T.intercalate "\n" xs'
+
+quote x = "'" <> x <> "'"
+
+title :: Location -> Text
+title = \case
+    LToplevel -> ""
+    LRepl -> "In the REPL:\n"
+    LFunction x -> "In the function " <> quote x <> ":\n"
+    LPrimitive x -> "In the primitive function " <> quote x <> "\n"
+    LMacro x -> "In the macro expansion " <> quote x <> ":\n" 
+    LDefine x -> "In the definition of " <> quote x <> ":\n"
 
 -- Display an error message as a string so it can be printed to the
 -- screen. TODO: use backtrace.
-errorPretty :: [Value] -> LispError -> Text -> Text
+errorPretty :: [(Location, [Value])] -> LispError -> Text -> Text
 errorPretty _ ParseError t = t
-errorPretty _ e t = T.pack (show e) <> ": " <> t
+errorPretty bt e t =
+       showBacktrace bt <> red "  <--- Here" <> "\n"
+    <> "\n"
+    <> red (T.pack $ show e) <> ": " <> t 

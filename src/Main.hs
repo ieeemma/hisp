@@ -21,7 +21,7 @@ main = do
     
     getArgs >>= \case
         [] -> repl e
-        [file] -> runEval (run "lib/core.lsp" *> run file) e >>= \case
+        [file] -> runEval (run file) e >>= \case
             Right _ -> pure ()
             Left (bt, e, t) -> TIO.putStrLn $ errorPretty bt e t
         _ -> do

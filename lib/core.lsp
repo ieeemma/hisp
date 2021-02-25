@@ -10,6 +10,20 @@
 (define (and x y) (if x y #f))
 (define (or  x y) (if x #t y))
 
+(define (any f xs)
+  (if (null? xs)
+    #f
+    (if (f (car xs))
+      #t
+      (any f (cdr xs)))))
+
+(define (all f xs)
+  (if (null? xs)
+    #t
+    (if (f (car xs))
+      (any (cdr xs))
+      #f)))
+
 (define (id x) x)
 
 (define (print-line x)

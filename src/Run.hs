@@ -16,7 +16,7 @@ import Data.Foldable (traverse_)
 import Data.Traversable (for)
 import Text.Megaparsec (parse, errorBundlePretty)
 import Control.Applicative ((<|>))
-import Control.Monad (when, (>=>))
+import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (gets, modify)
 import Control.Monad.Except (throwError)
@@ -39,19 +39,28 @@ parseFile f x = case parse file f x of
 --     while (value != Nothing)
 --         value = expand(value)
 expand :: Value -> Lisp (Maybe Value)
-expand (Symbol x `Pair` xs) = do
-    args <- fromPaired xs
+expand (x `Pair` xs) = do
+    args <- withVal xs
+          $ fromPaired xs
+    fn <- withVal x
+        $ expand x
     expd <- expand `traverse` args
     let expd' = fromJust <$> zipWith (<|>) expd (Just <$> args)
         xs' = toPaired expd' Null
+        fn'   = fromJust (fn <|> Just x)
+        noMacro = if all isNothing expd
+                  then pure Nothing
+                  else pure $ Just $ x `Pair` xs'
     ms <- gets (macros . preproc)
-    case x `M.lookup` ms of
-        Just (Macro _ a b) -> do
-            new <- match a xs'
-            Just <$> withEnv (M.union new) (eval b)
-        Nothing -> if all isNothing expd
-                   then pure Nothing
-                   else pure $ Just $ Symbol x `Pair` xs'
+    case fn' of
+        Symbol n -> case M.lookup n ms of
+            Just (Macro _ a b) -> withLoc (LMacro n) $ do
+                new <- withVal xs'
+                     $ match a xs'
+                withVal b $ Just <$> withEnv (M.union new) (eval b)
+            Nothing -> noMacro
+        _ -> noMacro
+
 expand _ = pure Nothing
 
 -- Simple while loop to keep expanding a value until it cannot be
@@ -74,13 +83,17 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
         -- To expand a function definition, fully expand its body and
         -- convert to a lambda`
         List [Symbol "define", Symbol name `Pair` args, body] -> do
-            b' <- expandFully body
-            v <- eval $ toPaired [Symbol "lambda", args, b'] Null
-            define name v
+            b' <- withLoc (LDefine name)
+                $ withVal body
+                $ expandFully body
+            e <- gets env
+            define name (Lambda name args body e)
             pure ([], [])
         -- To expand a definition, fully expand the assigned value
         List [Symbol "define", Symbol name, value] -> do
-            v <- expandFully value >>= eval
+            v <- withLoc (LDefine name) $
+                 withVal value $
+                 expandFully value >>= eval
             define name v
             pure ([], [])
         -- When a macro definition is encountered, add it to the `State`
@@ -111,6 +124,7 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
                 xs <- loadFile f' >>= parseFile f'
                 pure ([], xs)
             else pure ([], [])
+        _ -> lispError FormError "Malformed special form"
 expandToplevel x = do
     x' <- expandFully x
     pure ([x'], [])
@@ -129,7 +143,9 @@ expandFile xs = exp [] xs
 --     * Then, expand all macros using `expandFile`
 --     * Then, evaluate each form using `traverse_ eval`
 run :: FilePath -> Lisp ()
-run f = loadFile f >>= parseFile f >>= expandFile >>= traverse_ eval
+run f = loadFile f >>= parseFile f >>= expandFile >>=
+    \xs -> withLoc LToplevel
+         $ (\x -> withVal x $ eval x) `traverse_` xs
 
 -- Take input from the user and run the provided code. The environment
 -- is persistent, so defining a variable stays for the entire REPL
@@ -140,10 +156,12 @@ repl e = readline "> " >>= \case
         addHistory x
         let action = do
                 xs <- parseFile "<stdin>" (T.pack x) >>= expandFile
-                for xs $ eval >=> \case
-                    Null -> pure ()
-                    x' -> (showValue x' >>= liftIO . TIO.putStrLn)
-                       *> pure ()
+                for xs $ \x -> do
+                    x' <- withLoc LRepl $ withVal x $ eval x
+                    case x' of
+                        Null -> pure ()
+                        x' -> liftIO $ TIO.putStrLn (showValue x')
+                           *> pure ()
         runEval action e >>= \case
             Right (_, st) -> repl (head $ env st)
             Left (bt, err, t) -> TIO.putStrLn (errorPretty bt err t)

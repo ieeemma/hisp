@@ -3,9 +3,9 @@
       1
       (* n (factorial (- n 1)))))
 
-(print-line
-  (let [(x 5)
-        (y 10)]
-       (+ x y)))
+(print-line (factorial 7))
 
-(print-line (+ 3 4))
+
+(load "lib/list.lsp")
+
+(define my-list (filter id '(3 4 5)))

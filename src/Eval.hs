@@ -3,8 +3,12 @@ module Eval where
 import Common
 
 import qualified Data.Map as M
+import Data.Traversable (for)
 import Control.Applicative ((<|>))
 import Control.Monad.State (get, gets, put, modify)
+
+import Debug.Trace
+import qualified Data.Text as T
 
 -- Performs a `Lisp` action under a new environment by modifying the
 -- contents of the State monad
@@ -47,15 +51,15 @@ define n x = do
 makeEnv :: [Value] -> Lisp Scope
 makeEnv [] = pure M.empty
 makeEnv (List [Symbol name, value] : xs) = do
-    value' <- eval value
+    value' <- withVal value $ eval value
     xs' <- makeEnv xs
     pure $ M.insert name value' xs'
-makeEnv _ = lispError FormError "Malformed let aruments"
+makeEnv _ = lispError FormError "Malformed let arguments"
 
 forms = ["quote", "define", "lambda", "let", "do", "if"]
 
 -- `eval` is a depth-first traversal algorithm of the Value tree type.
-eval' :: Value -> Lisp Value
+eval :: Value -> Lisp Value
 
 -- A list where the head is a symbol in `forms` is a special macro
 -- form. These are:
@@ -66,20 +70,19 @@ eval' :: Value -> Lisp Value
 --       the last execution
 --     * `if` conditionally executes one of two expressions,
 --       depending on the truthiness of the condition
-eval' e@(Symbol x `Pair` _) | x `elem` forms =
+eval e@(Symbol x `Pair` _) | x `elem` forms =
     case e of
         List [Symbol "quote", x] -> pure x
         List [Symbol "define", Symbol name `Pair` args, body] ->
-            (eval (toPaired [Symbol "lambda", args, body] Null)
-                  >>= define name)
+            (Lambda name args body <$> gets env >>= define name)
             *> pure Null
         List [Symbol "define", Symbol name, value] ->
-            (eval value >>= define name) *> pure Null
+            withLoc (LDefine name) $ withVal value $ (eval value >>= define name) *> pure Null
         List [Symbol "lambda", args, body] ->
-            Lambda args body <$> gets env
+            Lambda "lambda" args body <$> gets env
         List [Symbol "let", values, body] -> do
             env' <- fromPaired values >>= makeEnv
-            withEnv (M.union env') $ eval body
+            withVal body $ withEnv (M.union env') $ eval body
         List (Symbol "do" : xs) ->
             last <$> eval `traverse` xs
         List [Symbol "if", c, t, f] ->
@@ -93,30 +96,31 @@ eval' e@(Symbol x `Pair` _) | x `elem` forms =
 --     * A procedure is executed by passing the provided arguments
 --       to the builtin Haskell function
 --     * Any other value is not a function so a type error is raised
-eval' (x `Pair` y) = do
-    fn <- eval x
+eval (x `Pair` y) = do
+    fn <- withVal x $ eval x
     case fn of
-        Lambda a b c -> do
-            new <- pairedMapM eval y >>= match a
-            withEnv (M.union new) $ eval b
-        Procedure _ f ->
-            fromPaired y >>= (eval `traverse`) >>= f
+        Lambda n a b c -> withLoc (LFunction n) $ do
+            y' <- withVal y $ fromPaired y
+            ys <- for y' $ \y -> withVal y $ eval y
+            new <- withVal a $ match a (toPaired ys Null)
+            withEnv (M.union new)
+                $ withVal b
+                $ eval b
+        Procedure n f ->
+            withLoc (LFunction n)
+                $ withVal fn
+                $ fromPaired y >>= (eval `traverse`) >>= f
         _ -> lispError TypeError "Tried to call non-function"
 
 -- A symbol is evaluated by looking up its value in the current scope.
 -- This is found in the State monad. If the variable is not present
 -- in the mapping, it is unbound, so a name error is raised.
-eval' (Symbol x) = do
+eval (Symbol x) = do
     l <- (foldr (<|>) Nothing . fmap (M.lookup x)) <$> gets env
     case l of
         Just x -> pure x
         Nothing -> lispError NameError x
 
 -- Any other value evaluates to itself
-eval' x = pure x
+eval x = pure x
 
-eval x = do
-    modify $ \st -> st { backtrace = x : backtrace st }
-    x' <- eval' x
-    modify $ \st -> st { backtrace = tail $ backtrace st }
-    pure x'
