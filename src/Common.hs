@@ -9,10 +9,10 @@ import Data.Traversable (for)
 import Data.Ratio (numerator, denominator)
 import Data.IORef
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (StateT, runStateT, get, gets, modify)
+import Control.Monad.State (StateT, runStateT, get, gets, put, modify)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 
-import Debug.Trace 
+import Debug.Trace
 
 type Symbol = Text
 
@@ -43,18 +43,19 @@ data Value
     | BoolVal Bool
     | NumVal LispNum
     | StringVal Text
-    | Lambda Symbol Value Value [Scope]
+    | Lambda Symbol Value Value Scope
     | Procedure Symbol ([Value] -> Lisp Value)
     | Struct Symbol [(Symbol, IORef Value)]
     | Null
 infixr `Pair`
 
-ansi opts x = "\x001b[" <> T.intercalate ";" opts <> "m" <> x <> "\x001b[0m"
+ansi opts x =
+    "\x001b[" <> T.intercalate ";" opts <> "m" <> x <> "\x001b[0m"
 ul = ansi ["4"]
 bold = ansi ["1"]
 red = ansi ["31"]
 
--- Recursive function to convert a lisp value to text for ptinting
+-- Recursive function to convert a lisp value to text for printing
 showValue :: Value -> Text 
 showValue x = case x of
     e@(Pair x y) -> showListValue e
@@ -62,7 +63,8 @@ showValue x = case x of
     BoolVal x -> if x then "#t" else "#f"
     NumVal x -> case x of
         LispInt x -> T.pack $ show x
-        LispRational x -> T.pack $ show (numerator x) <> "/" <> show (denominator x)
+        LispRational x -> T.pack $ show (numerator x)
+                         <> "/" <> show (denominator x)
         LispReal x -> T.pack $ show x
     StringVal x -> "\"" <> x <> "\""
     Lambda n _ _ _ -> "<procedure " <> n <> ">"
@@ -71,7 +73,8 @@ showValue x = case x of
     Null -> "'()"
 
 -- Special case for printing paired lists
-showListValue (x `Pair` y) = "(" <> bold (showValue x) <> " " <> go y <> ")"
+showListValue (x `Pair` y) = "(" <> bold (showValue x)
+                                 <> " " <> go y <> ")"
     where go (x `Pair` Null) = showValue x
           go (x `Pair` y) = showValue x <> " " <> go y
           go x = " . " <> showValue x
@@ -99,7 +102,7 @@ type Scope = Map Symbol Value
 --     * `backtrace` is a list of visited locations.
 --     * `preproc` stores information about the preprocessor
 data LispSt
-    = LispSt { env :: [Scope]
+    = LispSt { env :: Scope
              , backtrace :: [(Location, [Value])]
              , location :: Location
              , preproc :: LispPreproc }
@@ -114,7 +117,9 @@ data LispPreproc
 -- The `LispError` type describes each type of error that can be
 -- raised during execution
 data LispError
-    = ParseError | FormError | ArgumentError | TypeError | ValueError | NameError
+    = ParseError | FormError  | ArgumentError
+    | TypeError  | ValueError | NameError
+    | LispError
     deriving (Show)
     
 -- The `Location` type describes a location in the code that an error
@@ -133,7 +138,11 @@ data Location
 --     * An Except monad to track error messages
 --     * IO to perform actions such as reading files and printing,
 --       and allowing mutable structure types
-type Lisp = StateT LispSt (ExceptT ([(Location, [Value])], LispError, Text) IO)
+type Lisp =
+    StateT LispSt
+    (ExceptT
+        ([(Location, [Value])], LispError, Text)
+        IO)
 
 localSt f x = do
     before <- get
@@ -141,6 +150,11 @@ localSt f x = do
     x' <- x
     modify (const before)
     pure x'
+    
+-- Performs a `Lisp` action under a new environment by modifying the
+-- contents of the State monad
+withEnv :: (Scope -> Scope) -> Lisp a -> Lisp a
+withEnv f = localSt (\st -> st { env = f (env st) })
 
 withLoc :: Location -> Lisp a -> Lisp a
 withLoc l = localSt (\st -> st { location = l })
@@ -150,9 +164,13 @@ withVal v x = do
     l <- gets location
     localSt (f l) x
     where f l st@(LispSt { backtrace = b }) = case b of
-              (l', vs):bs -> st { backtrace = if l == l' then (l', v:vs):bs else (l, [v]):(l',vs):bs }
+              (l', vs):bs -> st { backtrace =
+                  if l == l'
+                  then (l', v:vs):bs
+                  else (l, [v]):(l',vs):bs }
               [] -> st { backtrace = [(l, [v])] }
-    
+
+quote x = "'" <> x <> "'"    
 
 -- Creates and raises an error. The backtrace is also bundled with
 -- the error data type.
@@ -179,5 +197,12 @@ makeProc n p f = Procedure n $
            else lispError ArgumentError $ "incorrect # args to " <> n
 
 -- Run a `Lisp` monad action, given a starting environment.
-runEval :: Lisp a -> Scope -> IO (Either ([(Location, [Value])], LispError, Text) (a, LispSt))
-runEval x e = runExceptT $ runStateT x (LispSt [e] [] LToplevel $ LispPreproc M.empty [])
+runEval :: Lisp a
+        -> Scope
+        -> Map Symbol Macro
+        -> IO (Either
+                ([(Location, [Value])], LispError, Text)
+                (a, LispSt))
+runEval x e m = runExceptT
+              $ runStateT x
+                (LispSt e [] LToplevel $ LispPreproc m [])

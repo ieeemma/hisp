@@ -1,6 +1,6 @@
 module Parse where
 
-import Common
+import Common hiding (quote)
 
 import Data.Char (isSpace)
 import Text.Megaparsec
@@ -36,15 +36,19 @@ prefixed x name = do
     pure $ toPaired [Symbol name, val] Null
 
 quote :: Parser Value
-quote = try null <|> prefixed "'" "quote" <|> prefixed "`" "quasiquote"
-    where null = (symbol "'" <|> symbol "`") *> symbol "(" *> symbol ")"
-                 *> pure Null
+quote = try null <|> prefixed "'" "quote"
+                 <|> prefixed "`" "quasiquote"
+    where null = (symbol "'" <|> symbol "`")
+               *> symbol "(" *> symbol ")"
+               *> pure Null
 
 signedInt, signedFloat :: Parser Value
 signedInt = lexeme $
-    NumVal . LispInt <$> L.signed (pure ()) L.decimal <* notFollowedBy symbolStart
+    NumVal . LispInt <$> L.signed (pure ()) L.decimal
+                     <* notFollowedBy symbolStart
 signedFloat = lexeme $
-    NumVal . LispReal <$> L.signed (pure ()) L.float <* notFollowedBy symbolStart
+    NumVal . LispReal <$> L.signed (pure ()) L.float
+                      <* notFollowedBy symbolStart
 
 symbolPred :: [Char] -> Char -> Bool
 symbolPred xs = \c -> (not $ isSpace c) && c `notElem` xs
@@ -54,7 +58,8 @@ symbolStart = satisfy $ symbolPred ['(',')','[',']', '.','\'',',']
 symbolMid   = satisfy $ symbolPred ['(',')','[',']']
 
 stringLit = lexeme $
-    StringVal <$> T.pack <$> (symbol "\"" *> manyTill L.charLiteral (symbol "\""))
+    StringVal <$> T.pack <$>
+    (symbol "\"" *> manyTill L.charLiteral (symbol "\""))
 
 symbol' = lexeme $ do
     s <- sym

@@ -1,7 +1,7 @@
 module Run where
 
 import Common
-import Parse
+import Parse (file)
 import Eval
 import Error (errorPretty)
 import Struct
@@ -12,6 +12,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Maybe (isNothing, fromJust)
+import Data.Functor ((<&>))
 import Data.Foldable (traverse_)
 import Data.Traversable (for)
 import Text.Megaparsec (parse, errorBundlePretty)
@@ -39,6 +40,9 @@ parseFile f x = case parse file f x of
 --     while (value != Nothing)
 --         value = expand(value)
 expand :: Value -> Lisp (Maybe Value)
+expand e@(Symbol "quote" `Pair` xs) = pure Nothing
+expand e@(List [Symbol "macroexpand", x]) =
+    expandFully x <&> \x -> Just (toPaired [Symbol "quote", x] Null)
 expand (x `Pair` xs) = do
     args <- withVal xs
           $ fromPaired xs
@@ -57,7 +61,9 @@ expand (x `Pair` xs) = do
             Just (Macro _ a b) -> withLoc (LMacro n) $ do
                 new <- withVal xs'
                      $ match a xs'
-                withVal b $ Just <$> withEnv (M.union new) (eval b)
+                withVal b $ 
+                    withEnv (M.union new) $
+                    Just <$> (expandFully b >>= eval)
             Nothing -> noMacro
         _ -> noMacro
 
@@ -82,12 +88,13 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
     case e of
         -- To expand a function definition, fully expand its body and
         -- convert to a lambda`
-        List [Symbol "define", Symbol name `Pair` args, body] -> do
-            b' <- withLoc (LDefine name)
-                $ withVal body
-                $ expandFully body
+        List (Symbol "define" : Symbol name `Pair` args : body) -> do
+            let body' = toPaired (Symbol "do" : body) Null
+            body'' <- withLoc (LDefine name)
+                $ withVal body'
+                $ expandFully body'
             e <- gets env
-            define name (Lambda name args body e)
+            define name (Lambda name args body'' e)
             pure ([], [])
         -- To expand a definition, fully expand the assigned value
         List [Symbol "define", Symbol name, value] -> do
@@ -101,7 +108,9 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
         List [Symbol "define-macro", Symbol name `Pair` args, body] -> do
             modify $ \st ->
                 let p = preproc st
-                in st { preproc = p { macros = M.insert name (Macro name args body) (macros p) } }
+                in st { preproc = p { macros =
+                    M.insert name (Macro name args body) (macros p)
+                } }
             pure ([], [])
         -- Call `defineStruct` from the `Struct` module to handle the
         -- creation of the struct type
@@ -124,9 +133,9 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
                 xs <- loadFile f' >>= parseFile f'
                 pure ([], xs)
             else pure ([], [])
-        _ -> lispError FormError "Malformed special form"
+        _ -> lispError FormError $ "Malformed special form " <> quote x
 expandToplevel x = do
-    x' <- expandFully x
+    x' <- withVal x $ expandFully x
     pure ([x'], [])
 
 -- For a given file, fully expand each value
@@ -150,8 +159,8 @@ run f = loadFile f >>= parseFile f >>= expandFile >>=
 -- Take input from the user and run the provided code. The environment
 -- is persistent, so defining a variable stays for the entire REPL
 -- session.
-repl :: Scope -> IO ()
-repl e = readline "> " >>= \case
+repl :: Scope -> Map Symbol Macro -> IO ()
+repl e m = readline "> " >>= \case
     Just x -> do
         addHistory x
         let action = do
@@ -162,8 +171,8 @@ repl e = readline "> " >>= \case
                         Null -> pure ()
                         x' -> liftIO $ TIO.putStrLn (showValue x')
                            *> pure ()
-        runEval action e >>= \case
-            Right (_, st) -> repl (head $ env st)
+        runEval action e m >>= \case
+            Right (_, st) -> repl (env st) (macros . preproc $ st)
             Left (bt, err, t) -> TIO.putStrLn (errorPretty bt err t)
-                              *> repl e
+                              *> repl e m
     Nothing -> pure ()

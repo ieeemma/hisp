@@ -1,6 +1,6 @@
 module Main where
 
-import Common (runEval, env)
+import Common
 import Error (errorPretty)
 import Core (builtins)
 import Run (run, repl)
@@ -14,14 +14,14 @@ main :: IO ()
 main = do
     hSetBuffering stdout NoBuffering
     
-    e <- runEval (run "lib/core.lsp") builtins >>= \case
-        Right (_, st) -> pure $ head $ env st
+    (ms, e) <- runEval (run "lib/core.lsp") builtins mempty >>= \case
+        Right (_, st) -> pure $ (macros . preproc $ st, env st)
         Left (bt, e, t) -> TIO.putStrLn (errorPretty bt e t)
                         *> error "Failed to load core module"
     
     getArgs >>= \case
-        [] -> repl e
-        [file] -> runEval (run file) e >>= \case
+        [] -> repl e ms
+        [file] -> runEval (run file) e ms >>= \case
             Right _ -> pure ()
             Left (bt, e, t) -> TIO.putStrLn $ errorPretty bt e t
         _ -> do

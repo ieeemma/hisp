@@ -10,14 +10,16 @@ import Text.Megaparsec (errorBundlePretty)
 showBacktrace :: [(Location, [Value])] -> Text
 showBacktrace bt = T.intercalate "\n" $ f <$> reverse bt
     where f (l, xs) =
-              let xs' = (T.intercalate "\n" . fmap ("   " <>) . T.lines . showValue) <$> reverse xs
+              let xs' = ( T.intercalate "\n"
+                        . fmap ("   " <>)
+                        . T.lines
+                        . showValue )
+                       <$> reverse xs
               in title l <> T.intercalate "\n" xs'
-
-quote x = "'" <> x <> "'"
 
 title :: Location -> Text
 title = \case
-    LToplevel -> ""
+    LToplevel -> "In file:\n"
     LRepl -> "In the REPL:\n"
     LFunction x -> "In the function " <> quote x <> ":\n"
     LPrimitive x -> "In the primitive function " <> quote x <> "\n"

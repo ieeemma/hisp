@@ -9,6 +9,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Map as M
 import Data.IORef
+import Data.Functor ((<&>))
+import Data.Traversable (for)
 import Text.Read (readMaybe)
 import Control.Monad ((>=>))
 import Control.Monad.IO.Class (liftIO)
@@ -20,7 +22,8 @@ import Control.Monad.IO.Class (liftIO)
 builtin n p f = (n, makeProc n p f)
 
 -- Raise an error when an unexpected type is encountered
-expected f t = lispError TypeError (f <> " expected " <> t <> " argument")
+expected f t = lispError TypeError
+    (f <> " expected " <> t <> " argument")
 
 -- String concatenation operation
 lispConcat xs = StringVal <$> convert xs
@@ -52,9 +55,12 @@ numberToString [NumVal x] = pure $ StringVal $ T.pack $ show x
 numberToString _ = expected "number->string" "number"
 
 -- Print or input a value as text
-lispPrint [x] = pure Null <* case x of
-    StringVal x -> liftIO $ TIO.putStr x
-    x -> liftIO $ TIO.putStr (showValue x)
+lispPrint [x] = do
+    liftIO $ TIO.putStr $ case x of
+        StringVal x -> x
+        x -> showValue x
+    pure Null
+
 lispRead _ = StringVal <$> (liftIO $ TIO.getLine)
 
 
@@ -78,6 +84,7 @@ lispEq [x, y] = pure $ BoolVal $ x =.= y
               (n1 == n2) && (a1 =.= b1) && (b1 =.= b2)
           Procedure n1 _ =.= Procedure n2 _ =
               n1 == n2
+          _ =.= _ = False
         
 
 -- Helper function for generating type predicate builtins
@@ -98,16 +105,20 @@ builtins = M.fromList
     , builtin "-" (> 0) $ binary (-)
     , builtin "*" (> 0) $ binary (*)
     , builtin "/" (> 0) $ numBinary lispDivision
+    , builtin "%" (> 0) $ binary lispMod
     , builtin "<>" (> 0) $ lispConcat
     
     , builtin "<" (> 1) $ comparison (<)
     , builtin ">" (> 1) $ comparison (>)
     , builtin "=" (> 1) $ comparison (==)
 
-    , builtin "denominator" (== 1) $ unpackNumbers >=> lispDenominator
-    , builtin "numerator" (== 1) $ unpackNumbers >=> lispNumerator
+    , builtin "denominator" (== 1) $
+          unpackNumbers >=> lispDenominator
+    , builtin "numerator" (== 1) $
+          unpackNumbers >=> lispNumerator
     , builtin "abs" (== 1) $ unary abs
     , builtin "expt" (== 2) $ numBinary lispExpt
+    , builtin "round" (== 1) $ numUnary lispRound
 
     , builtin "string->symbol" (== 1) stringToSymbol
     , builtin "symbol->string" (== 1) symbolToString
@@ -118,9 +129,11 @@ builtins = M.fromList
     , typePred "symbol?" $ \case { Symbol{} -> t; _ -> f }
     , typePred "boolean?" $ \case { BoolVal{} -> t; _ -> f }
     , typePred "number?" $ \case { NumVal{} -> t; _ -> f; }
-    , typePred "integer?" $ \case { NumVal (LispInt _)-> t; _ -> f; }
+    , typePred "integer?" $ \case
+          { NumVal (LispInt _)-> t; _ -> f; }
     , typePred "rational?" $ \case
-        { NumVal (LispRational _)-> t; NumVal (LispInt _) -> t; _ -> f; }
+          { NumVal (LispRational _)-> t;
+            NumVal (LispInt _) -> t; _ -> f; }
     , typePred "real?" $ \case { NumVal{} -> t; _ -> f; }
     , typePred "string?" $ \case { StringVal{} -> t; _ -> f; }
     , typePred "procedure?" $ \case { Lambda{} -> t; Procedure{} -> t; _ -> f }
@@ -131,8 +144,12 @@ builtins = M.fromList
 
     , builtin "cons" (== 2) $ \[x, y] -> pure $ x `Pair` y
     , builtin "eval" (== 1) $ \[x] -> eval x
-    , builtin "show" (== 1) $ \[x] -> pure $ StringVal $ showValue x
+    , builtin "show" (== 1) $ \[x] ->
+          pure $ StringVal $ showValue x
     , builtin "eq?" (== 2) $ lispEq
+    , builtin "error" (> 0) $
+          \xs -> lispError LispError
+               $ T.intercalate ", " $ showValue <$> xs
     ]
     where t = True
           f = False
