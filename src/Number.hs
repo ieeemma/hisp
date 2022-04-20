@@ -1,14 +1,15 @@
-{-# LANGUAGE RankNTypes
-           , TypeSynonymInstances
-           , FlexibleInstances
-           , DefaultSignatures #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+
 module Number where
 
 import Common
 
-import Data.Text (Text)
-import Data.Ratio (numerator, denominator)
 import Data.Fixed (mod')
+import Data.Ratio (denominator, numerator)
+import Data.Text (Text)
 
 -- Typeclass to handle operations on `LispNum` types
 class (Num a) => LispNumOp a where
@@ -25,15 +26,18 @@ instance LispNumOp Double
 
 -- Raise an error when an unexpected type is encountered
 expectedNum :: Text -> Text -> Lisp a
-expectedNum f t = lispError TypeError
-    (f <> " expected " <> t <> " number argument")
+expectedNum f t =
+    lispError
+        TypeError
+        (f <> " expected " <> t <> " number argument")
 
 -- Given a list of `Value`s, extract a list of `LispNum`s from it.
 -- If any values are not `LispNum`s, raise an error.
 unpackNumbers :: [Value] -> Lisp [LispNum]
 unpackNumbers xs = u `traverse` xs
-    where u (NumVal x) = pure x
-          u _ = lispError TypeError "Expected number argument"
+  where
+    u (NumVal x) = pure x
+    u _ = lispError TypeError "Expected number argument"
 
 -- Simply apply an operation to the wrapped number value
 handleUnary :: (forall a. (LispNumOp a) => a -> a) -> LispNum -> LispNum
@@ -47,9 +51,10 @@ numUnary :: (LispNum -> LispNum) -> [Value] -> Lisp Value
 numUnary f x = NumVal . f . head <$> unpackNumbers x
 
 -- Given a function and some values, compute the result
-unary :: (forall a. (LispNumOp a) => a -> a)
-      -> [Value]
-      -> Lisp Value
+unary ::
+    (forall a. (LispNumOp a) => a -> a) ->
+    [Value] ->
+    Lisp Value
 unary f = numUnary $ handleUnary f
 
 -- Here, number promotion is performed. For example:
@@ -58,10 +63,11 @@ unary f = numUnary $ handleUnary f
 --     * Rational + Real => Real
 -- The exception to this is integer division, which is handled
 -- seperately.
-handleBinary :: (forall a. (LispNumOp a) => a -> a -> a)
-             -> LispNum
-             -> LispNum
-             -> LispNum
+handleBinary ::
+    (forall a. (LispNumOp a) => a -> a -> a) ->
+    LispNum ->
+    LispNum ->
+    LispNum
 handleBinary op x y = case (x, y) of
     (LispInt n, LispInt m) -> LispInt $ op n m
     (LispReal n, m) -> LispReal $ op n (getNum m)
@@ -70,9 +76,10 @@ handleBinary op x y = case (x, y) of
     (n, LispRational m) -> LispRational $ op (getNum n) m
 
 -- Perform a fold over a list of numbers
-numBinary :: (LispNum -> LispNum -> LispNum)
-          -> [Value]
-          -> Lisp Value
+numBinary ::
+    (LispNum -> LispNum -> LispNum) ->
+    [Value] ->
+    Lisp Value
 numBinary f xs = NumVal . foldl1 f <$> unpackNumbers xs
 
 -- Given a function and some values, compute the result
@@ -83,14 +90,17 @@ binary f = numBinary $ handleBinary f
 comparison :: (LispNum -> LispNum -> Bool) -> [Value] -> Lisp Value
 comparison f xs =
     BoolVal . all (uncurry f) <$> (pairs <$> unpackNumbers xs)
-    where pairs [] = []
-          pairs ys = zip ys (tail ys)
+  where
+    pairs [] = []
+    pairs ys = zip ys (tail ys)
 
 -- Special case for integer division.
 lispDivision :: LispNum -> LispNum -> LispNum
 lispDivision (LispInt x) (LispInt y) =
-    handleBinary lispDiv (LispRational $ fromInteger x)
-                         (LispRational $ fromInteger y)
+    handleBinary
+        lispDiv
+        (LispRational $ fromInteger x)
+        (LispRational $ fromInteger y)
 lispDivision x y = handleBinary lispDiv x y
 
 -- Get the numberator and denominator from a rational number type

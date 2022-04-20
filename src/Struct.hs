@@ -3,44 +3,47 @@ module Struct where
 import Common
 import Eval
 
-import Data.IORef
-import Data.Functor (($>))
-import Data.Foldable (for_)
 import Control.Monad.IO.Class (liftIO)
+import Data.Foldable (for_)
+import Data.Functor (($>))
+import Data.IORef
 
 -- Consruct a structure constructor given a name and a list of
 -- argument names. The result is a function that, when given some
 -- arguments, will produce a structure value.
 makeStruct :: Symbol -> [Symbol] -> [Value] -> Lisp Value
 makeStruct n fs xs = do
-  vals <- zip fs <$> (liftIO . newIORef) `traverse` xs
-  pure $ Struct n vals
+    vals <- zip fs <$> (liftIO . newIORef) `traverse` xs
+    pure $ Struct n vals
 
 -- Get the IORef stored within a structure under a given field name,
 -- or throw an error if it does not exist
-getIORef :: Symbol
-         -> [(Symbol, IORef Value)]
-         -> Symbol
-         -> Lisp (IORef Value)
+getIORef ::
+    Symbol ->
+    [(Symbol, IORef Value)] ->
+    Symbol ->
+    Lisp (IORef Value)
 getIORef sn vs n = case lookup n vs of
     Just ref -> pure ref
-    Nothing -> lispError NameError
-             $ "no struct field " <> n <> " in " <> sn
-
+    Nothing ->
+        lispError NameError $
+            "no struct field " <> n <> " in " <> sn
 
 -- Get the value of a field in a struct
-getField :: Symbol
-         -> [(Symbol, IORef Value)]
-         -> Symbol
-         -> Lisp Value
+getField ::
+    Symbol ->
+    [(Symbol, IORef Value)] ->
+    Symbol ->
+    Lisp Value
 getField sn vs n = getIORef sn vs n >>= liftIO . readIORef
 
 -- Set the value of a field in a struct
-setField :: Symbol
-         -> [(Symbol, IORef Value)]
-         -> Symbol
-         -> Value
-         -> Lisp ()
+setField ::
+    Symbol ->
+    [(Symbol, IORef Value)] ->
+    Symbol ->
+    Value ->
+    Lisp ()
 setField sn vs n x =
     getIORef sn vs n >>= liftIO . flip writeIORef x
 
@@ -52,12 +55,15 @@ defineStruct :: Symbol -> [Value] -> Lisp ()
 defineStruct name fields = do
     let extract = \case
             Symbol x -> pure x
-            _ -> lispError FormError
-                     "define-struct expected symbol field name"
+            _ ->
+                lispError
+                    FormError
+                    "define-struct expected symbol field name"
     fields' <- extract `traverse` fields
     let makeN = "make-" <> name
-        makeF = makeProc makeN (== length fields)
-              $ makeStruct name fields'
+        makeF =
+            makeProc makeN (== length fields) $
+                makeStruct name fields'
     define makeN makeF
     for_ fields' $ \f -> do
         let getBuiltin [st] = case st of

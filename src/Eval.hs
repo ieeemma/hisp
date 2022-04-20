@@ -2,10 +2,10 @@ module Eval where
 
 import Common
 
-import qualified Data.Map as M
-import Data.Functor (($>))
-import Data.Traversable (for)
 import Control.Monad.State (gets, modify)
+import Data.Functor (($>))
+import qualified Data.Map as M
+import Data.Traversable (for)
 
 pairedMapM :: (Value -> Lisp Value) -> Value -> Lisp Value
 pairedMapM f (List xs) = flip toPaired Null <$> f `traverse` xs
@@ -23,7 +23,7 @@ match (Symbol n) y = pure $ M.singleton n y
 match Null Null = pure M.empty
 match Null _ = lispError ArgumentError "too many arguments to call"
 match _ Null = lispError ArgumentError "too few arguments to call"
-match _ _    = lispError ArgumentError "wrong arguments to call"
+match _ _ = lispError ArgumentError "wrong arguments to call"
 
 -- Anything not a `BoolVal False` is truthy. This is strange
 -- behaviour but consistent with Scheme.
@@ -33,20 +33,20 @@ truthy _ = True
 
 -- Helper function to define a new value in the current environment
 define :: Symbol -> Value -> Lisp ()
-define n x = modify $ \st -> st { env = M.insert n x (env st) }
+define n x = modify $ \st -> st {env = M.insert n x (env st)}
 
 makeEnv :: Scope -> [Value] -> Lisp Scope
 makeEnv e [] = pure e
 makeEnv e (List [Symbol name, value] : xs) = do
-    value' <- withVal value
-            $ withEnv (M.union e)
-            $ eval value
+    value' <-
+        withVal value $
+            withEnv (M.union e) $
+                eval value
     makeEnv (M.insert name value' e) xs
 makeEnv _ _ = lispError FormError "Malformed let arguments"
 
 -- `eval` is a depth-first traversal algorithm of the Value tree type.
 eval :: Value -> Lisp Value
-
 -- A list where the head is a symbol in `forms` is a special macro
 -- form. These are:
 --     * `define` is used to declare new variables, either as a
@@ -64,9 +64,9 @@ eval e@(Symbol x `Pair` _) | x `elem` forms =
             gets (Lambda name args body' . env) >>= define name
             pure Null
         List [Symbol "define", Symbol name, value] ->
-            withLoc (LDefine name)
-                $ withVal value
-                $ (eval value >>= define name) $> Null
+            withLoc (LDefine name) $
+                withVal value $
+                    (eval value >>= define name) $> Null
         List [Symbol "lambda", args, body] ->
             gets (Lambda "lambda" args body . env)
         List [Symbol "let", values, body] -> do
@@ -77,9 +77,8 @@ eval e@(Symbol x `Pair` _) | x `elem` forms =
         List [Symbol "if", c, t, f] ->
             eval c >>= \c' -> eval $ if truthy c' then t else f
         _ -> lispError FormError $ "Malformed special form " <> quote x
-
-    where forms = ["quote", "define", "lambda", "let", "do", "if"]
-
+  where
+    forms = ["quote", "define", "lambda", "let", "do", "if"]
 
 -- A list such as `(f x)` is run as a function. First, the head of
 -- the list is evaluated to determine its value:
@@ -95,23 +94,22 @@ eval (x `Pair` y) = do
     case fn of
         Lambda n a b _ -> do
             new <- withVal a $ match a (toPaired args Null)
-            withLoc (LFunction n)
-                $ withEnv (M.union new)
-                $ withVal b
-                $ eval b
+            withLoc (LFunction n) $
+                withEnv (M.union new) $
+                    withVal b $
+                        eval b
         Procedure n f -> do
-            withLoc (LFunction n)
-                $ withVal fn
-                $ f args
+            withLoc (LFunction n) $
+                withVal fn $
+                    f args
         _ -> lispError TypeError "Tried to call non-function"
 
 -- A symbol is evaluated by looking up its value in the current scope.
 -- This is found in the State monad. If the variable is not present
 -- in the mapping, it is unbound, so a name error is raised.
-eval (Symbol n) = gets (M.lookup n . env) >>= \case
-    Just x -> pure x
-    Nothing -> lispError NameError $ "Undefined symbol " <> quote n
-
+eval (Symbol n) =
+    gets (M.lookup n . env) >>= \case
+        Just x -> pure x
+        Nothing -> lispError NameError $ "Undefined symbol " <> quote n
 -- Any other value evaluates to itself
 eval x = pure x
-

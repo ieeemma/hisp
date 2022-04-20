@@ -7,13 +7,15 @@ import qualified Data.Text as T
 
 showBacktrace :: [(Location, [Value])] -> Text
 showBacktrace bt = T.intercalate "\n" $ f <$> reverse bt
-    where f (l, xs) =
-              let xs' = T.intercalate "\n"
-                      . fmap ("   " <>)
-                      . T.lines
-                      . showValue
-                     <$> reverse xs
-              in title l <> T.intercalate "\n" xs'
+  where
+    f (l, xs) =
+        let xs' =
+                T.intercalate "\n"
+                    . fmap ("   " <>)
+                    . T.lines
+                    . showValue
+                    <$> reverse xs
+         in title l <> T.intercalate "\n" xs'
 
 title :: Location -> Text
 title = \case
@@ -29,6 +31,8 @@ title = \case
 errorPretty :: [(Location, [Value])] -> LispError -> Text -> Text
 errorPretty _ ParseError t = t
 errorPretty bt e t =
-       showBacktrace bt <> red "  <--- Here" <> "\n"
-    <> "\n"
-    <> red (T.pack $ show e) <> ": " <> t
+    showBacktrace bt <> red "  <--- Here" <> "\n"
+        <> "\n"
+        <> red (T.pack $ show e)
+        <> ": "
+        <> t
