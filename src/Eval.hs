@@ -3,13 +3,13 @@ module Eval where
 import Common
 
 import qualified Data.Map as M
+import Data.Functor (($>))
 import Data.Traversable (for)
-import Control.Applicative ((<|>))
-import Control.Monad.State (get, gets, put, modify)
+import Control.Monad.State (gets, modify)
 
 pairedMapM :: (Value -> Lisp Value) -> Value -> Lisp Value
 pairedMapM f (List xs) = flip toPaired Null <$> f `traverse` xs
-pairedMapM f x = pure x
+pairedMapM _ x = pure x
 
 -- Psuedo-pattern-matching for function arguments. Given a list of
 -- arguments and a list of values, attempt to match them to produce a
@@ -27,6 +27,7 @@ match _ _    = lispError ArgumentError "wrong arguments to call"
 
 -- Anything not a `BoolVal False` is truthy. This is strange
 -- behaviour but consistent with Scheme.
+truthy :: Value -> Bool
 truthy (BoolVal False) = False
 truthy _ = True
 
@@ -43,8 +44,6 @@ makeEnv e (List [Symbol name, value] : xs) = do
     makeEnv (M.insert name value' e) xs
 makeEnv _ _ = lispError FormError "Malformed let arguments"
 
-forms = ["quote", "define", "lambda", "let", "do", "if"]
-
 -- `eval` is a depth-first traversal algorithm of the Value tree type.
 eval :: Value -> Lisp Value
 
@@ -59,17 +58,17 @@ eval :: Value -> Lisp Value
 --       depending on the truthiness of the condition
 eval e@(Symbol x `Pair` _) | x `elem` forms =
     case e of
-        List [Symbol "quote", x] -> pure x
+        List [Symbol "quote", y] -> pure y
         List (Symbol "define" : Symbol name `Pair` args : body) -> do
             let body' = toPaired (Symbol "do" : body) Null
-            Lambda name args body' <$> gets env >>= define name
+            gets (Lambda name args body' . env) >>= define name
             pure Null
         List [Symbol "define", Symbol name, value] ->
             withLoc (LDefine name)
                 $ withVal value
-                $ (eval value >>= define name) *> pure Null
+                $ (eval value >>= define name) $> Null
         List [Symbol "lambda", args, body] ->
-            Lambda "lambda" args body <$> gets env
+            gets (Lambda "lambda" args body . env)
         List [Symbol "let", values, body] -> do
             env' <- fromPaired values >>= makeEnv M.empty
             withVal body $ withEnv (M.union env') $ eval body
@@ -78,7 +77,9 @@ eval e@(Symbol x `Pair` _) | x `elem` forms =
         List [Symbol "if", c, t, f] ->
             eval c >>= \c' -> eval $ if truthy c' then t else f
         _ -> lispError FormError $ "Malformed special form " <> quote x
-        
+
+    where forms = ["quote", "define", "lambda", "let", "do", "if"]
+
 
 -- A list such as `(f x)` is run as a function. First, the head of
 -- the list is evaluated to determine its value:
@@ -89,11 +90,11 @@ eval e@(Symbol x `Pair` _) | x `elem` forms =
 --     * Any other value is not a function so a type error is raised
 eval (x `Pair` y) = do
     fn <- withVal x $ eval x
-    y' <- withVal y $ fromPaired y
-    ys <- for y' $ \y -> withVal y $ eval y
+    ys <- withVal y $ fromPaired y
+    args <- for ys $ \arg -> withVal arg (eval arg)
     case fn of
-        Lambda n a b c -> do
-            new <- withVal a $ match a (toPaired ys Null)
+        Lambda n a b _ -> do
+            new <- withVal a $ match a (toPaired args Null)
             withLoc (LFunction n)
                 $ withEnv (M.union new)
                 $ withVal b
@@ -101,13 +102,13 @@ eval (x `Pair` y) = do
         Procedure n f -> do
             withLoc (LFunction n)
                 $ withVal fn
-                $ f ys
+                $ f args
         _ -> lispError TypeError "Tried to call non-function"
 
 -- A symbol is evaluated by looking up its value in the current scope.
 -- This is found in the State monad. If the variable is not present
 -- in the mapping, it is unbound, so a name error is raised.
-eval (Symbol n) = M.lookup n <$> gets env >>= \case
+eval (Symbol n) = gets (M.lookup n . env) >>= \case
     Just x -> pure x
     Nothing -> lispError NameError $ "Undefined symbol " <> quote n
 

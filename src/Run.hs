@@ -12,15 +12,13 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Maybe (isNothing, fromJust)
-import Data.Functor ((<&>))
+import Data.Functor ((<&>), ($>))
 import Data.Foldable (traverse_)
 import Data.Traversable (for)
 import Text.Megaparsec (parse, errorBundlePretty)
 import Control.Applicative ((<|>))
-import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (gets, modify)
-import Control.Monad.Except (throwError)
 import System.Console.Readline hiding (Macro)
 
 -- Read a file, or throw an error if it does not exist
@@ -40,9 +38,9 @@ parseFile f x = case parse file f x of
 --     while (value != Nothing)
 --         value = expand(value)
 expand :: Value -> Lisp (Maybe Value)
-expand e@(Symbol "quote" `Pair` xs) = pure Nothing
-expand e@(List [Symbol "macroexpand", x]) =
-    expandFully x <&> \x -> Just (toPaired [Symbol "quote", x] Null)
+expand (Symbol "quote" `Pair` _) = pure Nothing
+expand (List [Symbol "macroexpand", x]) = expandFully x <&> \y ->
+    Just (toPaired [Symbol "quote", y] Null)
 expand (x `Pair` xs) = do
     args <- withVal xs
           $ fromPaired xs
@@ -61,7 +59,7 @@ expand (x `Pair` xs) = do
             Just (Macro _ a b) -> withLoc (LMacro n) $ do
                 new <- withVal xs'
                      $ match a xs'
-                withVal b $ 
+                withVal b $
                     withEnv (M.union new) $
                     Just <$> (expandFully b >>= eval)
             Nothing -> noMacro
@@ -76,6 +74,7 @@ expandFully x = expand x >>= \case
     Just x' -> expandFully x'
     Nothing -> pure x
 
+macroForms :: [Text]
 macroForms = ["define", "define-macro", "define-struct", "do", "load"]
 
 -- The following forms are valid at a toplevel and must be handled
@@ -93,8 +92,8 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
             body'' <- withLoc (LDefine name)
                 $ withVal body'
                 $ expandFully body'
-            e <- gets env
-            define name (Lambda name args body'' e)
+            e' <- gets env
+            define name (Lambda name args body'' e')
             pure ([], [])
         -- To expand a definition, fully expand the assigned value
         List [Symbol "define", Symbol name, value] -> do
@@ -115,7 +114,7 @@ expandToplevel e@(Symbol x `Pair` _) | x `elem` macroForms =
         -- Call `defineStruct` from the `Struct` module to handle the
         -- creation of the struct type
         List (Symbol "define-struct" : Symbol name : fields) ->
-            defineStruct name fields *> pure ([], [])
+            defineStruct name fields $> ([], [])
         -- A `do` form at the toplevel is also handled as if it was
         -- part of the toplevel
         List (Symbol "do" : xs) ->
@@ -140,12 +139,12 @@ expandToplevel x = do
 
 -- For a given file, fully expand each value
 expandFile :: [Value] -> Lisp [Value]
-expandFile xs = exp [] xs
-    where exp :: [Value] -> [Value] -> Lisp [Value]
-          exp d [] = pure d
-          exp d (r:rs) = do
+expandFile = ex []
+    where ex :: [Value] -> [Value] -> Lisp [Value]
+          ex d [] = pure d
+          ex d (r:rs) = do
               (d', r') <- expandToplevel r
-              exp (d <> d') (r' <> rs)
+              ex (d <> d') (r' <> rs)
 
 -- To run a file:
 --     * Parse it using `parseFile`
@@ -164,13 +163,10 @@ repl e m = readline "> " >>= \case
     Just x -> do
         addHistory x
         let action = do
-                xs <- parseFile "<stdin>" (T.pack x) >>= expandFile
-                for xs $ \x -> do
-                    x' <- withLoc LRepl $ withVal x $ eval x
-                    case x' of
-                        Null -> pure ()
-                        x' -> liftIO $ TIO.putStrLn (showValue x')
-                           *> pure ()
+                ys <- parseFile "<stdin>" (T.pack x) >>= expandFile
+                for ys $ \y -> withLoc LRepl (withVal y $ eval y) >>= \case
+                    Null -> pure ()
+                    y' -> liftIO $ TIO.putStrLn (showValue y') $> ()
         runEval action e m >>= \case
             Right (_, st) -> repl (env st) (macros . preproc $ st)
             Left (bt, err, t) -> TIO.putStrLn (errorPretty bt err t)

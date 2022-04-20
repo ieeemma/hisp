@@ -4,7 +4,8 @@ import Common
 import Eval
 
 import Data.IORef
-import Data.Traversable (for)
+import Data.Functor (($>))
+import Data.Foldable (for_)
 import Control.Monad.IO.Class (liftIO)
 
 -- Consruct a structure constructor given a name and a list of
@@ -41,7 +42,7 @@ setField :: Symbol
          -> Value
          -> Lisp ()
 setField sn vs n x =
-    getIORef sn vs n >>= liftIO . (flip writeIORef x)
+    getIORef sn vs n >>= liftIO . flip writeIORef x
 
 -- Given a struct definition of the form `(define-struct field1 field2 ...)`
 -- make functions to create this struct, and to get and set each
@@ -55,21 +56,23 @@ defineStruct name fields = do
                      "define-struct expected symbol field name"
     fields' <- extract `traverse` fields
     let makeN = "make-" <> name
-        makeF = makeProc makeN (== (length fields))
+        makeF = makeProc makeN (== length fields)
               $ makeStruct name fields'
     define makeN makeF
-    for fields' $ \f -> do
-        let getN = name <> "-" <> f
-            getF = makeProc getN (== 1) $ \[st] -> case st of
+    for_ fields' $ \f -> do
+        let getBuiltin [st] = case st of
                 Struct n xs | n == name -> getField n xs f
-                _ -> lispError TypeError
-                         (getN <> " expected " <> name <> " argument")
+                _ -> lispError TypeError (getN <> " expected " <> name <> " argument")
+            getBuiltin _ = error "Bad arguments"
+
+            setBuiltin [st, x] = case st of
+                Struct n xs | n == name -> setField n xs f x $> Null
+                _ -> lispError TypeError (setN <> " expected " <> name <> " argument")
+            setBuiltin _ = error "Bad arguments"
+
+            getN = name <> "-" <> f
+            getF = makeProc getN (== 1) getBuiltin
             setN = name <> "-" <> f <> "-set!"
-            setF = makeProc getN (== 2) $ \[st, x] -> case st of
-                Struct n xs | n == name -> setField n xs f x
-                                        *> pure Null
-                _ -> lispError TypeError
-                         (setN <> " expected " <> name <> " argument")
+            setF = makeProc getN (== 2) setBuiltin
         define getN getF
         define setN setF
-    pure ()

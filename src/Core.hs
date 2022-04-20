@@ -9,8 +9,6 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Map as M
 import Data.IORef
-import Data.Functor ((<&>))
-import Data.Traversable (for)
 import Text.Read (readMaybe)
 import Control.Monad ((>=>))
 import Control.Monad.IO.Class (liftIO)
@@ -19,16 +17,20 @@ import Control.Monad.IO.Class (liftIO)
 -- and a function. The predicate ensures the correct number of
 -- arguments are passed to the function. For example, a predicate f
 -- `(> 3)` or `(elem [3, 4, 5])`.
+builtin :: Text -> (Int -> Bool) -> ([Value] -> Lisp Value) -> (Text, Value)
 builtin n p f = (n, makeProc n p f)
 
 -- Raise an error when an unexpected type is encountered
+expected :: Text -> Text -> Lisp a
 expected f t = lispError TypeError
     (f <> " expected " <> t <> " argument")
 
--- String concatenation operation
+lispConcat, stringToSymbol, symbolToString, stringToNumber, numberToString, lispPrint, lispRead, lispEq :: [Value] -> Lisp Value
+
+-- String concatenation operationz
 lispConcat xs = StringVal <$> convert xs
     where convert [] = pure ""
-          convert (StringVal x : xs) = (x <>) <$> convert xs
+          convert (StringVal y : ys) = (y <>) <$> convert ys
           convert _ = expected "<>" "string"
 
 -- Convert a sttring to a symbol by changing the `Value` constructor
@@ -57,38 +59,38 @@ numberToString _ = expected "number->string" "number"
 -- Print or input a value as text
 lispPrint [x] = do
     liftIO $ TIO.putStr $ case x of
-        StringVal x -> x
-        x -> showValue x
+        StringVal y -> y
+        y -> showValue y
     pure Null
+lispPrint _ = error "Bad arguments"
 
-lispRead _ = StringVal <$> (liftIO $ TIO.getLine)
+lispRead _ = StringVal <$> liftIO TIO.getLine
 
+valueEq :: Value -> Value -> Lisp Bool
+valueEq (Struct n1 x1) (Struct n2 x2)
+    | n1 == n2 && (fst <$> x1) == (fst <$> x2) = do
+        x1' <- (liftIO . readIORef . snd) `traverse` x1
+        x2' <- (liftIO . readIORef . snd) `traverse` x2
+        eqs <- uncurry valueEq `traverse` zip x1' x2'
+        pure (and eqs)
+valueEq (Pair x1 y1) (Pair x2 y2) = do
+    x <- valueEq x1 x2
+    y <- valueEq y1 y2
+    pure (x && y)
+valueEq (Symbol x) (Symbol y) = pure (x == y)
+valueEq (BoolVal x) (BoolVal y) = pure (x == y)
+valueEq (NumVal x) (NumVal y) = pure (x == y)
+valueEq (StringVal x) (StringVal y) = pure (x == y)
+valueEq _ _ = pure False
 
-lispEq :: [Value] -> Lisp Value
-lispEq [Struct n1 x1, Struct n2 x2] =
-    if n1 /= n2 || (fst <$> x1) /= (fst <$> x2)
-    then pure $ BoolVal False
-    else do
-        x1' <- (liftIO . readIORef) `traverse` (snd <$> x1)
-        x2' <- (liftIO . readIORef) `traverse` (snd <$> x2)
-        let xs = (\(x,y) -> [x,y]) <$> zip x1' x2'
-        eqs <- fmap (\(BoolVal x) -> x) <$> lispEq `traverse` xs
-        pure $ BoolVal $ all id eqs
-lispEq [x, y] = pure $ BoolVal $ x =.= y
-    where Pair x1 y1 =.= Pair x2 y2 = (x1 =.= x2) && (y1 =.= y2)
-          Symbol x =.= Symbol y = x == y
-          BoolVal x =.= BoolVal y = x == y
-          NumVal x =.= NumVal y = x == y
-          StringVal x =.= StringVal y = x == y
-          Lambda n1 a1 b1 _ =.= Lambda n2 a2 b2 _ =
-              (n1 == n2) && (a1 =.= b1) && (b1 =.= b2)
-          Procedure n1 _ =.= Procedure n2 _ =
-              n1 == n2
-          _ =.= _ = False
-        
+lispEq [x, y] = BoolVal <$> valueEq x y
+lispEq _ = error "Bad arguments"
 
 -- Helper function for generating type predicate builtins
-typePred n f = builtin n (== 1) $ \[x] -> pure $ BoolVal $ f x
+typePred :: Text -> (Value -> Bool) -> (Text, Value)
+typePred n f = builtin n (== 1) go
+    where go [x] = pure $ BoolVal $ f x
+          go _ = error "Bad arguments"
 
 -- Huge list of builtin functions available to the Lisp.
 --     * Arithmetic such as `+`
@@ -106,8 +108,8 @@ builtins = M.fromList
     , builtin "*" (> 0) $ binary (*)
     , builtin "/" (> 0) $ numBinary lispDivision
     , builtin "%" (> 0) $ binary lispMod
-    , builtin "<>" (> 0) $ lispConcat
-    
+    , builtin "<>" (> 0) lispConcat
+
     , builtin "<" (> 1) $ comparison (<)
     , builtin ">" (> 1) $ comparison (>)
     , builtin "=" (> 1) $ comparison (==)
@@ -142,15 +144,24 @@ builtins = M.fromList
     , builtin "print" (== 1) lispPrint
     , builtin "read" (== 0) lispRead
 
-    , builtin "cons" (== 2) $ \[x, y] -> pure $ x `Pair` y
-    , builtin "eval" (== 1) $ \[x] -> eval x
-    , builtin "show" (== 1) $ \[x] ->
-          pure $ StringVal $ showValue x
-    , builtin "eq?" (== 2) $ lispEq
+    , builtin "cons" (== 2) cons
+    , builtin "eval" (== 1) eval'
+    , builtin "show" (== 1) show'
+
+    , builtin "eq?" (== 2) lispEq
     , builtin "error" (> 0) $
           \xs -> lispError LispError
                $ T.intercalate ", " $ showValue <$> xs
     ]
     where t = True
           f = False
+
+          cons [x, y] = pure (x `Pair` y)
+          cons _ = error "Bad arguments"
+
+          eval' [x] = eval x
+          eval' _ = error "Bad arguments"
+
+          show' [x] = pure $ StringVal (showValue x)
+          show' _ = error "Bad arguments"
 
