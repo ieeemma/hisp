@@ -6,7 +6,6 @@ import Number
 
 import Control.Monad ((>=>))
 import Control.Monad.IO.Class (liftIO)
-import Data.IORef
 import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -63,25 +62,7 @@ lispPrint [x] = do
     pure Null
 lispPrint _ = error "Bad arguments"
 lispRead _ = StringVal <$> liftIO TIO.getLine
-
-valueEq :: Value -> Value -> Lisp Bool
-valueEq (Struct n1 x1) (Struct n2 x2)
-    | n1 == n2 && (fst <$> x1) == (fst <$> x2) = do
-        x1' <- (liftIO . readIORef . snd) `traverse` x1
-        x2' <- (liftIO . readIORef . snd) `traverse` x2
-        eqs <- uncurry valueEq `traverse` zip x1' x2'
-        pure (and eqs)
-valueEq (Pair x1 y1) (Pair x2 y2) = do
-    x <- valueEq x1 x2
-    y <- valueEq y1 y2
-    pure (x && y)
-valueEq (Symbol x) (Symbol y) = pure (x == y)
-valueEq (BoolVal x) (BoolVal y) = pure (x == y)
-valueEq (NumVal x) (NumVal y) = pure (x == y)
-valueEq (StringVal x) (StringVal y) = pure (x == y)
-valueEq _ _ = pure False
-
-lispEq [x, y] = BoolVal <$> valueEq x y
+lispEq [x, y] = BoolVal <$> x `equals` y
 lispEq _ = error "Bad arguments"
 
 -- Helper function for generating type predicate builtins
