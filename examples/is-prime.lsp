@@ -5,4 +5,4 @@
     (for x (range lower upper)
       (not (zero? (% n x)))))))
       
-(print-line prime? 456789877)
+(print-line (prime? 456789877))
