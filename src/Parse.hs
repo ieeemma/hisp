@@ -92,7 +92,7 @@ sexpression =
     list
         <|> quote
         <|> prefixed "," "unquote"
-        -- <|> prefixed "#" "anon"
+        <|> try signedFloat
         <|> try signedInt
         <|> try stringLit
         <|> symbol'
