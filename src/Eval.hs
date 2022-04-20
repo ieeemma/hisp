@@ -117,6 +117,7 @@ eval e@(Symbol x `Pair` _) | x `elem` forms =
     checkPattern _ = lispError FormError "Malformed match branch"
 
     matchPattern :: Value -> Value -> Lisp (Maybe Scope)
+    matchPattern (Symbol "_") _ = pure (Just mempty)
     matchPattern y (Symbol z) = pure $ Just $ M.singleton z y
     matchPattern (Symbol y) (List [Symbol "quote", Symbol z])
         | y == z = pure (Just mempty)
