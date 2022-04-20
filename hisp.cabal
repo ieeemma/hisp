@@ -1,9 +1,9 @@
 cabal-version:      >= 2.0
-name:               lisp2
+name:               hisp
 version:            0.1.0.0
 build-type:         Simple
 
-executable lisp2
+executable hisp
   main-is:              Main.hs
   other-modules:        Common, Parse, Eval, Core, Error, Run, Number, Struct
   build-depends:        base ^>= 4.14,
